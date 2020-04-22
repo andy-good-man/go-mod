@@ -162,5 +162,110 @@ require (
 1. 指定hash信息时不要在前面加上`v`，只需要给出commit hash即可
 2. hash至少需要8位，与git等工具不同，少于8位会导致go mod无法找到包的对应版本，推荐与go mod保持一致给出12位长度的hash
 
+# replace替换依赖包
+
+`go mod edit -replace`无疑是一个十分强大的命令，但强大的同时它的限制也非常多。
+
+本部分你将看到两个例子，它们分别阐述了本地包替换的方法以及顶层依赖与间接依赖的区别，现在让我们进入第一个例子。
+
+## 特点
+
+replace除了可以将远程的包进行替换外，还可以将本地存在的modules替换成任意指定的名字。
+
+## 准备
+
+假设我们有如下的项目：
+
+```bash
+tree my-mod
+
+my-mod
+├── go.mod
+├── main.go
+└── pkg
+    ├── go.mod
+    └── pkg.go
+```
+
+* 其中main.go负责调用`my/example/pkg`中的`Hello`函数，
+
+* `my/example/pkg`显然是个不存在的包，我们将用本地目录的`pkg`包替换它，这是my-mod/main.go：
+
+```golang
+package main
+
+import "my/example/pkg"
+
+func main() {
+	pkg.Hello()
+}
+```
+
+我们的pkg/pkg.go相对来说很简单：
+
+```golang
+package pkg
+
+import "fmt"
+
+func Hello() {
+	fmt.Println("Hello --- this is a test for replace command.")
+}
+```
+
+## 执行使用
+
+* 重点在于my-mod/go.mod文件，虽然不推荐直接编辑mod文件，但在这个例子中与使用`go mod edit`的效果几乎没有区别，所以你可以尝试自己动手修改my-mod/go.mod：
+
+```text
+module my-mod
+
+require my/example/pkg v0.0.0
+
+replace my/example/pkg => ./pkg
+```
+
+* 至于pkg/go.mod，使用`go mod init`生成后不用做任何修改，它只是让我们的pkg成为一个module，因为replace的源和目标都只能是go modules。
+
+* 因为被replace的包，首先需要被require（wiki说本地替换不用指定，然而我试了报错），所以在my-mod/go.mod中，我们需要先指定依赖的包(require)，即使它并不存在。
+  * 对于一个会被replace的包，如果是用本地的module进行替换，那么**如何指定版本**？
+    * 可以指定版本为`v0.0.0`(对于没有使用版本控制的包，只能指定这个版本)。
+    * 否则应该和替换包的指定版本一致。
+
+* 再看`replace my/example/pkg => ./pkg`这句，与替换远程包时一样，只是将替换用的包名改为了本地module所在的**绝对或相对路径**。
+
+一切准备就绪，我们运行`go build`，然后项目目录会变成这样：
+
+```bash
+tree my-mod
+
+my-mod
+├── go.mod
+├── main.go
+├── my-mod
+└── pkg
+    ├── go.mod
+    └── pkg.go
+```
+
+那个叫my-mod的文件就是编译好的程序，我们运行它：
+
+```bash
+./my-mod
+Hello
+```
+
+运行成功，`my/example/pkg`已经替换成了本地的`pkg`。
+
+同时我们注意到，使用本地包进行替换时，并不会生成go.sum所需的信息，所以go.sum文件也没有生成。
+
+本地替换的价值在于，它提供了一种使自动生成的代码进入go modules系统的途径，毕竟不管是go tools还是rpc工具，这些自动生成代码也是项目的一部分，如果不能纳入包管理器的管理范围想必会带来很大的麻烦。
+
+## 替换不起作用？
+
+
+
+
+
 
 
