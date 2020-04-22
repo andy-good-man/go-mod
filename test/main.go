@@ -1,5 +1,6 @@
 // Command click is a chromedp example demonstrating how to use a selector to
 // click on an element.
+// this file main.go from:https://github.com/chromedp/examples/blob/master/click/main.go
 package main
 
 import (
