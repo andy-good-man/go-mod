@@ -263,9 +263,77 @@ Hello
 
 ## 替换不起作用？
 
+### 疑问
 
+如果你因为`golang.org/x/...`无法获取，而使用replace进行替换，那么你肯定遇到过问题。
 
+明明已经replace的包，为何还会去未替换的地址进行搜索和下载？
 
+解释这个问题前，先看一个go.mod的例子，这个项目使用的第三方模块使用了`golang.org/x/...`的包，但项目中没有直接引用它们：
 
+```text
+module schanclient
 
+require (
+	github.com/PuerkitoBio/goquery v1.4.1
+	github.com/andybalholm/cascadia v1.0.0 // indirect
+	github.com/chromedp/chromedp v0.1.2
+	golang.org/x/net v0.0.0-20180824152047-4bcd98cce591 // indirect
+)
+```
+
+### 依赖分类
+
+* 顶级依赖：
+  * 在本module中，是否有文件直接import导入使用，如果有，则分为顶级依赖。
+* 间接依赖：
+  * 和上边相反，是本module中有些调用包的依赖，是间接依赖链中的，则分为间接依赖。
+  * 特点：在 go.mod 文件中，require的某个依赖后边出现 `// indirect`，表示是一个间接依赖。
+* 区分认识：
+  * 如果，我给 go.mod 中某个依赖 后边手动加上 间接依赖 标示`// indirect`，它是不是就变成顶级依赖了？
+  * 答案：不是，具体分析看下边。
+
+### 解决疑问
+
+注意：
+
+`github.com/andybalholm/cascadia v1.0.0`和`golang.org/x/net v0.0.0-20180824152047-4bcd98cce591`后面的`// indirect`，它表示这是一个间接依赖。
+
+间接依赖：
+
+是指在当前module中没有直接import，而被当前module使用的第三方module引入的包。
+
+相对的顶层依赖：
+
+就是在当前module中被直接import的包。
+
+**如果二者规则发生冲突，那么顶层依赖的规则覆盖间接依赖**。
+
+疑问原因分析：
+
+* 在这里`golang.org/x/net`被`github.com/chromedp/chromedp`引入，但当前项目未直接import，所以是一个间接依赖，而`github.com/chromedp/chromedp`被直接引入和使用，所以它是一个顶层依赖。
+
+* 而我们的replace命令只能管理顶层依赖，所以在这里你使用`replace golang.org/x/net => github.com/golang/net`是**没用的**，这就是为什么会出现go build时仍然去下载`golang.org/x/net`的原因。
+
+* 那么如果我把`// indirect`去掉了，那么不就变成顶层依赖了吗？答案当然是不行。不管是直接编辑还是`go mod edit`修改，我们为go.mod添加的信息都只是对`go mod`的一种提示而已，当运行`go build`或是`go mod tidy`时，golang会自动更新go.mod导致某些修改无效，简单来说一个包是顶层依赖还是间接依赖，取决于它在本module中是否被直接import，而不是在go.mod文件中是否包含`// indirect`注释。
+
+## replace的有限性和用途
+
+### 有限性
+
+replace唯一的限制是它只能处理顶层依赖。
+
+* 这样限制的原因也很好理解，因为对于包进行替换后，通常不能保证兼容性。
+* 兼容性问题，对于一些使用了这个包的第三方module来说，可能意味着潜在的缺陷。
+* 而允许顶层依赖的替换，则意味着你对自己的项目有充足的自信不会因为replace引入问题，是可控的。相当符合golang的工程性原则。
+
+### 用途
+
+也正如此replace的适用范围受到了相当的限制：
+
+1. 可以使用本地包替换将生成代码纳入go modules的管理
+2. 对于直接import的顶层依赖，可以替换不能正常访问的包或是过时的包
+3. go modules下import不再支持使用相对路径导入包，例如`import "./mypkg"`，所以需要考虑replace
+
+除此之外的replace暂时没有什么用处，当然以后如果有变动的话说不定可以发挥比现在更大的作用。
 
